@@ -71,13 +71,13 @@ func getClient(config *oauth2.Config, tokenSavePath string) *http.Client {
 	}
 	return config.Client(context.Background(), tok)
 }
-func perFile(srv *drive.Service, i *drive.File, path string, afterCreate func(string), worker FileWorker) {
+func perFile(srv *drive.Service, i *drive.File, path string, dateOffset time.Time, afterCreate func(string), worker FileWorker) {
 	<-worker.job
 	startTime := time.Now()
 	var err error
 	if i.MimeType == "application/vnd.google-apps.folder" {
 		go func() {
-			err := <-StartDoFile(srv, i.Id, path+"/"+i.Name, afterCreate)
+			err := <-StartDoFile(srv, i.Id, path+"/"+i.Name, dateOffset, afterCreate)
 			worker.res <- err
 			fmt.Printf("End(Folder, %s): %s/%s (%s)\n", time.Now().Sub(startTime), path, i.Name, i.Id)
 		}()
@@ -99,10 +99,10 @@ func perFile(srv *drive.Service, i *drive.File, path string, afterCreate func(st
 		worker.res <- err
 	}
 }
-func StartDoFile(srv *drive.Service, id string, path string, afterCreate func(string)) <-chan error {
+func StartDoFile(srv *drive.Service, id string, path string, dateOffset time.Time, afterCreate func(string)) <-chan error {
 	worker := NewWorker(1)
 	worker.job <- new(interface{})
-	go DoFiles(srv, id, path, afterCreate, worker)
+	go DoFiles(srv, id, path, dateOffset, afterCreate, worker)
 
 	return worker.res
 }
@@ -154,7 +154,7 @@ func DoFiles(srv *drive.Service, id string, path string, dateOffset time.Time, a
 			}
 			for i := 0; i < workerCount; i++ {
 				time.Sleep(1000 * time.Millisecond)
-				go perFile(srv, r.Files[offset+i], path, afterCreate, coWorker)
+				go perFile(srv, r.Files[offset+i], path, dateOffset, afterCreate, coWorker)
 			}
 			offset += workerCount
 			for i := 0; i < workerCount; i++ {
