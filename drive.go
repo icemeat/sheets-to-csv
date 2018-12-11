@@ -128,7 +128,7 @@ func DoFiles(srv *drive.Service, id string, path string, dateOffset time.Time, a
 	call := srv.Files.List().
 		Q(fmt.Sprintf("'%s' in parents and modifiedTime >= %s and trashed=false ", id, dateOffset.Format(time.RFC3339))).
 		PageSize(1000).
-		Fields("nextPageToken, files(id, name, mimeType,modifiedDate)")
+		Fields("nextPageToken, files(id, name, mimeType,modifiedTime)")
 
 	r, err := call.Do()
 	if err != nil {
