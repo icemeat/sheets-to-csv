@@ -16,7 +16,13 @@ import (
 	"google.golang.org/api/drive/v3"
 )
 
-const DriveTimeFormat = "2006-01-02T15:04:05"
+const (
+	DriveTimeFormat = time.RFC3339
+)
+
+var (
+	apiRateHolder = make(chan bool, 1)
+)
 
 // Saves a token to a file path.
 func saveToken(path string, token *oauth2.Token) {
@@ -79,26 +85,45 @@ func perFile(srv *drive.Service, i *drive.File, path string, dateOffset time.Tim
 	var err error
 	if i.MimeType == "application/vnd.google-apps.folder" {
 		go func() {
+			apiRateHolder <- true
+			go func() {
+				time.Sleep(1 * time.Second)
+				<-apiRateHolder
+			}()
 			err := <-StartDoFile(srv, i.Id, path+"/"+i.Name, dateOffset, afterCreate)
 			worker.res <- err
 			fmt.Printf("End(Folder, %s): %s/%s (%s)\n", time.Now().Sub(startTime), path, i.Name, i.Id)
 		}()
 	} else {
-		exportCall := srv.Files.Export(i.Id, "text/csv")
-		resp, exportErr := exportCall.Download()
-		if exportErr != nil {
-			log.Fatalln("Export Error: ", exportErr)
-		} else {
-			fileWorker := NewWorker(1)
-			fileWorker.job <- new(interface{})
-			go FileHandleWork(resp, path+"/"+i.Name, afterCreate, fileWorker)
-			e := <-fileWorker.res
+		t, e := time.Parse(DriveTimeFormat, i.ModifiedTime)
+		if e != nil || t.After(dateOffset) {
 			if e != nil {
-				log.Println("Err to Download File: ", e, path+"/"+i.Name)
+				log.Fatalln("fail to parse time: ", e)
 			}
-			fmt.Printf("End(File, %s): %s/%s (%s)\n", time.Now().Sub(startTime), path, i.Name, i.Id)
+			apiRateHolder <- true
+			exportCall := srv.Files.Export(i.Id, "text/csv")
+			resp, exportErr := exportCall.Download()
+			go func() {
+				time.Sleep(1 * time.Second)
+				<-apiRateHolder
+			}()
+			if exportErr != nil {
+				log.Fatalln("Export Error: ", exportErr)
+			} else {
+				fileWorker := NewWorker(1)
+				fileWorker.job <- new(interface{})
+				go FileHandleWork(resp, path+"/"+i.Name, afterCreate, fileWorker)
+				e := <-fileWorker.res
+				if e != nil {
+					log.Println("Err to Download File: ", e, path+"/"+i.Name)
+				}
+				fmt.Printf("End(File, %s): %s/%s (lastModify:%s)(%s)\n", time.Now().Sub(startTime), path, i.Name, t, i.Id)
+			}
+			worker.res <- err
+		} else {
+			fmt.Printf("Skip(File, %s): %s/%s (lastModify:%s)(%s)\n", time.Now().Sub(startTime), path, i.Name, t, i.Id)
+			worker.res <- err
 		}
-		worker.res <- err
 	}
 }
 func StartDoFile(srv *drive.Service, id string, path string, dateOffset time.Time, afterCreate func(string)) <-chan error {
@@ -111,6 +136,12 @@ func StartDoFile(srv *drive.Service, id string, path string, dateOffset time.Tim
 func DownloadFile(srv *drive.Service, id string, saveFullPath string, afterCreate func(string)) {
 	exportCall := srv.Files.Export(id, "text/csv")
 	resp, exportErr := exportCall.Download()
+	starttime := time.Now()
+	apiRateHolder <- true
+	go func() {
+		time.Sleep(1 * time.Second)
+		log.Println(time.Now().Sub(starttime), <-apiRateHolder)
+	}()
 	if exportErr != nil {
 		log.Fatalln("Export Error: ", exportErr)
 	} else {
@@ -127,9 +158,9 @@ func DownloadFile(srv *drive.Service, id string, saveFullPath string, afterCreat
 func DoFiles(srv *drive.Service, id string, path string, dateOffset time.Time, afterCreate func(string), worker FileWorker) {
 	<-worker.job
 	call := srv.Files.List().
-		Q(fmt.Sprintf("'%s' in parents and modifiedTime > '%s' and trashed=false ", id, dateOffset.Format(DriveTimeFormat))).
+		Q(fmt.Sprintf("'%s' in parents and trashed=false ", id)).
 		PageSize(1000).
-		Fields("nextPageToken, files(id, name, mimeType)")
+		Fields("nextPageToken, files(id, name, mimeType, modifiedTime)")
 
 	r, err := call.Do()
 	if err != nil {
@@ -154,7 +185,6 @@ func DoFiles(srv *drive.Service, id string, path string, dateOffset time.Time, a
 				coWorker.job <- new(interface{})
 			}
 			for i := 0; i < workerCount; i++ {
-				time.Sleep(1000 * time.Millisecond)
 				go perFile(srv, r.Files[offset+i], path, dateOffset, afterCreate, coWorker)
 			}
 			offset += workerCount
