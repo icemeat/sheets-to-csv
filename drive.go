@@ -122,12 +122,13 @@ func DownloadFile(srv *drive.Service, id string, saveFullPath string, afterCreat
 	}
 }
 
-func DoFiles(srv *drive.Service, id string, path string, afterCreate func(string), worker FileWorker) {
+func DoFiles(srv *drive.Service, id string, path string, dateOffset time.Time, afterCreate func(string), worker FileWorker) {
 	<-worker.job
+	///RFC3339 2012-06-04T12:00:00-08:0
 	call := srv.Files.List().
-		Q(fmt.Sprintf("'%s' in parents and trashed=false", id)).
+		Q(fmt.Sprintf("'%s' in parents and modifiedTime >= %s and trashed=false ", id, dateOffset.Format(time.RFC3339))).
 		PageSize(1000).
-		Fields("nextPageToken, files(id, name, mimeType)")
+		Fields("nextPageToken, files(id, name, mimeType,modifiedDate)")
 
 	r, err := call.Do()
 	if err != nil {
