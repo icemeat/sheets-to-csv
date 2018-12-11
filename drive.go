@@ -126,7 +126,6 @@ func DownloadFile(srv *drive.Service, id string, saveFullPath string, afterCreat
 
 func DoFiles(srv *drive.Service, id string, path string, dateOffset time.Time, afterCreate func(string), worker FileWorker) {
 	<-worker.job
-	log.Println("fmt: ", fmt.Sprintf("'%s' in parents and modifiedTime > '%s' and trashed=false ", id, dateOffset.Format(DriveTimeFormat)))
 	call := srv.Files.List().
 		Q(fmt.Sprintf("'%s' in parents and modifiedTime > '%s' and trashed=false ", id, dateOffset.Format(DriveTimeFormat))).
 		PageSize(1000).
