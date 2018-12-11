@@ -16,6 +16,8 @@ import (
 	"google.golang.org/api/drive/v3"
 )
 
+const DriveTimeFormat = "2006-01-02T15:04:05"
+
 // Saves a token to a file path.
 func saveToken(path string, token *oauth2.Token) {
 	fmt.Printf("Saving credential file to: %s\n", path)
@@ -124,11 +126,11 @@ func DownloadFile(srv *drive.Service, id string, saveFullPath string, afterCreat
 
 func DoFiles(srv *drive.Service, id string, path string, dateOffset time.Time, afterCreate func(string), worker FileWorker) {
 	<-worker.job
-	///RFC3339 2012-06-04T12:00:00-08:0
+	log.Println("fmt: ", fmt.Sprintf("'%s' in parents and modifiedTime > '%s' and trashed=false ", id, dateOffset.Format(DriveTimeFormat)))
 	call := srv.Files.List().
-		Q(fmt.Sprintf("'%s' in parents and modifiedTime >= %s and trashed=false ", id, dateOffset.Format(time.RFC3339))).
+		Q(fmt.Sprintf("'%s' in parents and modifiedTime > '%s' and trashed=false ", id, dateOffset.Format(DriveTimeFormat))).
 		PageSize(1000).
-		Fields("nextPageToken, files(id, name, mimeType,modifiedTime)")
+		Fields("nextPageToken, files(id, name, mimeType)")
 
 	r, err := call.Do()
 	if err != nil {
