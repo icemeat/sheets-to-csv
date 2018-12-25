@@ -8,15 +8,6 @@ import (
 	"google.golang.org/api/drive/v3"
 )
 
-func waitAPIRate() {
-	apiRateHolder <- true
-	go func() {
-		select {
-		case <-time.After(1 * time.Second):
-			<-apiRateHolder
-		}
-	}()
-}
 func getLazyLogger() (signal chan string) {
 	signal = make(chan string)
 	startTime := time.Now()

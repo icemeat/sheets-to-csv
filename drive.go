@@ -24,6 +24,16 @@ var (
 	apiRateHolder = make(chan bool, 1)
 )
 
+func waitAPIRate() {
+	apiRateHolder <- true
+	go func() {
+		select {
+		case <-time.After(1 * time.Second):
+			<-apiRateHolder
+		}
+	}()
+}
+
 // Saves a token to a file path.
 func saveToken(path string, token *oauth2.Token) {
 	fmt.Printf("Saving credential file to: %s\n", path)

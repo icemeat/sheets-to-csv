@@ -38,11 +38,6 @@ func perFile(srv *drive.Service, i *drive.File, path string, dateOffset time.Tim
 	var err error
 	if i.MimeType == "application/vnd.google-apps.folder" {
 		go func() {
-			apiRateHolder <- true
-			go func() {
-				time.Sleep(1 * time.Second)
-				<-apiRateHolder
-			}()
 			err := <-StartDoFile(srv, i.Id, path+"/"+i.Name, dateOffset, afterCreate)
 			worker.res <- err
 			fmt.Printf("End(Folder, %s): %s/%s (%s)\n", time.Now().Sub(startTime), path, i.Name, i.Id)
@@ -53,13 +48,10 @@ func perFile(srv *drive.Service, i *drive.File, path string, dateOffset time.Tim
 			if e != nil {
 				log.Fatalln("fail to parse time: ", e)
 			}
-			apiRateHolder <- true
+			waitAPIRate()
 			exportCall := srv.Files.Export(i.Id, "text/csv")
 			resp, exportErr := exportCall.Download()
-			go func() {
-				time.Sleep(1 * time.Second)
-				<-apiRateHolder
-			}()
+
 			if exportErr != nil {
 				log.Fatalln("Export Error: ", exportErr)
 			} else {
@@ -89,12 +81,6 @@ func StartDoFile(srv *drive.Service, id string, path string, dateOffset time.Tim
 func DownloadFile(srv *drive.Service, id string, saveFullPath string, afterCreate func(string)) {
 	exportCall := srv.Files.Export(id, "text/csv")
 	resp, exportErr := exportCall.Download()
-	starttime := time.Now()
-	apiRateHolder <- true
-	go func() {
-		time.Sleep(1 * time.Second)
-		log.Println(time.Now().Sub(starttime), <-apiRateHolder)
-	}()
 	if exportErr != nil {
 		log.Fatalln("Export Error: ", exportErr)
 	} else {
@@ -109,6 +95,7 @@ func DownloadFile(srv *drive.Service, id string, saveFullPath string, afterCreat
 }
 func DoFiles(srv *drive.Service, id string, path string, dateOffset time.Time, afterCreate func(string), worker FileWorker) {
 	<-worker.job
+	waitAPIRate()
 	call := srv.Files.List().
 		Q(fmt.Sprintf("'%s' in parents and trashed=false ", id)).
 		PageSize(1000).
